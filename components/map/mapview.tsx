@@ -99,14 +99,17 @@ export default function MapView({
 
         mapRef.current?.flyTo({
           center: [longitude, latitude],
-          zoom: 16,
+          zoom: 17,
           essential: true,
         });
 
         if (!userMarkerRef.current) {
-          userMarkerRef.current = new mapboxgl.Marker({
-            color: "#facc15",
-            scale: 1.05,
+          const el = document.createElement("div");
+            el.className = "user-location-marker";
+
+            userMarkerRef.current = new mapboxgl.Marker({
+            element: el,
+            anchor: "center",
           })
             .setLngLat([longitude, latitude])
             .addTo(mapRef.current!);

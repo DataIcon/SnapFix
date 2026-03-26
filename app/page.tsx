@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import MapView from "@/components/map/mapview";
 import {
   MapPin,
@@ -8,13 +11,43 @@ import {
   Plus,
 } from "lucide-react";
 
+type ResolvedLocation = {
+  latitude: number;
+  longitude: number;
+  city: string;
+  street: string;
+};
+
 export default function HomePage() {
+  const [locationText, setLocationText] = useState("טוען מיקום...");
+  const [recenterTrigger, setRecenterTrigger] = useState(0);
+
+  function handleLocationResolved(data: ResolvedLocation) {
+    const parts = [data.city, data.street]
+      .map((p) => p?.trim())
+      .filter(Boolean);
+
+    if (parts.length > 0) {
+      setLocationText(parts.join(", "));
+    } else {
+      setLocationText("מיקום לא זוהה");
+    }
+  }
+
+  function handleLocationError(message: string) {
+    setLocationText(message || "שגיאת מיקום");
+  }
+
   return (
     <main
       dir="rtl"
       className="relative h-screen w-full overflow-hidden bg-slate-950 text-white"
     >
-      <MapView />
+      <MapView
+        recenterTrigger={recenterTrigger}
+        onLocationResolved={handleLocationResolved}
+        onLocationError={handleLocationError}
+      />
 
       {/* Right sidebar */}
       <aside className="absolute right-0 top-0 z-20 flex h-screen w-60 flex-col justify-between border-l border-white/10 bg-slate-950/55 px-3 py-3 shadow-[0_20px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
@@ -31,7 +64,10 @@ export default function HomePage() {
 
           {/* Nav items */}
           <nav className="space-y-1.5">
-            <button className="flex w-full items-center gap-2.5 rounded-[1.3rem] border border-white/10 bg-white/6 px-3 py-2 text-right transition-all duration-150 hover:bg-white/12 hover:border-white/20 active:scale-95">
+            <button
+              onClick={() => setRecenterTrigger((prev) => prev + 1)}
+              className="flex w-full items-center gap-2.5 rounded-[1.3rem] border border-white/10 bg-white/6 px-3 py-2 text-right transition-all duration-150 hover:bg-white/12 hover:border-white/20 active:scale-95"
+            >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white">
                 <MapPin size={16} />
               </div>
@@ -85,7 +121,7 @@ export default function HomePage() {
       {/* Top center location display */}
       <div className="absolute left-[calc(50%-5.5rem)] top-5 z-20 w-[min(70vw,28rem)] -translate-x-1/2 rounded-[1.3rem] border border-white/10 bg-slate-950/55 px-8 py-2 text-center shadow-[0_12px_45px_rgba(0,0,0,0.3)] backdrop-blur-xl">
         <p className="mb-0.5 text-[10px] text-white/60">מיקום נוכחי</p>
-        <p className="text-xl font-bold text-white">עיר, רחוב</p>
+        <p className="text-xl font-bold text-white">{locationText}</p>
       </div>
 
       {/* Floating Add Report Button */}
