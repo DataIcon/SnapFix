@@ -42,42 +42,19 @@ export default function MapView({
         `https://api.mapbox.com/search/geocode/v6/reverse?longitude=${longitude}&latitude=${latitude}&language=he&access_token=${token}`
       );
 
-      if (!response.ok) {
-        return { city: "", street: "" };
-      }
-
       const data = await response.json();
       const features = Array.isArray(data.features) ? data.features : [];
 
-      let city = "";
       let street = "";
 
       for (const feature of features) {
-        if (!city && Array.isArray(feature.context)) {
-          const placeContext = feature.context.find(
-            (item: { id?: string; name?: string }) =>
-              item.id?.startsWith("place") || item.id?.startsWith("locality")
-          );
-
-          if (placeContext?.name) {
-            city = placeContext.name;
-          }
+        if (!street && feature.properties?.name) {
+          street = feature.properties.name;
         }
-
-        if (!street) {
-          if (feature.feature_type === "street" && feature.properties?.name) {
-            street = feature.properties.name;
-          } else if (feature.properties?.name) {
-            street = feature.properties.name;
-          }
-        }
-
-        if (city && street) break;
       }
 
-      return { city, street };
-    } catch (error) {
-      console.error("Reverse geocoding error:", error);
+      return { city: "", street };
+    } catch {
       return { city: "", street: "" };
     }
   }
@@ -85,79 +62,60 @@ export default function MapView({
   async function updateUserLocationOnMap() {
     if (!mapRef.current) return;
 
-    if (!navigator.geolocation) {
-      onLocationError("הדפדפן לא תומך במיקום");
-      return;
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+
+      userCoordsRef.current = { latitude, longitude };
+
+      moveToLocation(latitude, longitude);
+
+      const { city, street } = await reverseGeocode(latitude, longitude);
+
+      onLocationResolved({
+        latitude,
+        longitude,
+        city,
+        street,
+      });
+    });
+  }
+
+  function moveToLocation(latitude: number, longitude: number) {
+    mapRef.current?.flyTo({
+      center: [longitude, latitude],
+      zoom: 17,
+      essential: true,
+    });
+
+    if (!userMarkerRef.current) {
+      const el = document.createElement("div");
+      el.className = "user-location-marker";
+
+      userMarkerRef.current = new mapboxgl.Marker({
+        element: el,
+        anchor: "center",
+      })
+        .setLngLat([longitude, latitude])
+        .addTo(mapRef.current!);
+    } else {
+      userMarkerRef.current.setLngLat([longitude, latitude]);
     }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
-
-        userCoordsRef.current = { latitude, longitude };
-
-        mapRef.current?.flyTo({
-          center: [longitude, latitude],
-          zoom: 17,
-          essential: true,
-        });
-
-        if (!userMarkerRef.current) {
-          const el = document.createElement("div");
-            el.className = "user-location-marker";
-
-            userMarkerRef.current = new mapboxgl.Marker({
-            element: el,
-            anchor: "center",
-          })
-            .setLngLat([longitude, latitude])
-            .addTo(mapRef.current!);
-        } else {
-          userMarkerRef.current.setLngLat([longitude, latitude]);
-        }
-
-        const { city, street } = await reverseGeocode(latitude, longitude);
-
-        onLocationResolved({
-          latitude,
-          longitude,
-          city,
-          street,
-        });
-      },
-      (error) => {
-        console.error("Geolocation error:", error);
-        onLocationError("לא התקבלה הרשאת מיקום");
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
-    );
   }
 
   useEffect(() => {
+    mapboxgl.setRTLTextPlugin(
+      "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js",
+      null,
+      true
+    );
+
     if (!mapContainer.current) return;
 
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!token) {
-      console.error("Missing Mapbox token. Set NEXT_PUBLIC_MAPBOX_TOKEN in .env.local.");
-      onLocationError("חסר טוקן של Mapbox");
-      return;
-    }
+    if (!token) return;
 
     mapboxgl.accessToken = token;
-
-    if (!mapboxgl.supported()) {
-      console.error("Mapbox GL is not supported in this browser or WebGL is disabled.");
-      onLocationError("המפה לא נתמכת בדפדפן הזה");
-      return;
-    }
-
-    const currentHour = new Date().getHours();
-    const lightPreset = getLightPresetByHour(currentHour);
 
     const map = new mapboxgl.Map({
       container: mapContainer.current,
@@ -166,7 +124,8 @@ export default function MapView({
       zoom: 14,
       config: {
         basemap: {
-          lightPreset,
+          lightPreset: getLightPresetByHour(new Date().getHours()),
+          language: "he",
         },
       },
     });
@@ -174,31 +133,28 @@ export default function MapView({
     mapRef.current = map;
 
     map.on("load", () => {
-      map.resize();
       updateUserLocationOnMap();
     });
 
-    map.on("error", (event) => {
-      console.error("Mapbox load error:", event.error || event);
-    });
-
     return () => {
-      userMarkerRef.current?.remove();
       map.remove();
-      mapRef.current = null;
-      userMarkerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (recenterTrigger === 0) return;
-    updateUserLocationOnMap();
+    if (!userCoordsRef.current) return;
+
+    // 🔥 פה הקסם — חוזר מיד בלי GPS
+    moveToLocation(
+      userCoordsRef.current.latitude,
+      userCoordsRef.current.longitude
+    );
   }, [recenterTrigger]);
 
   return (
     <div
       ref={mapContainer}
-      className="absolute inset-0 z-0 bg-slate-800"
+      className="absolute inset-0 z-0"
       style={{ minHeight: "100vh", minWidth: "100vw" }}
     />
   );
