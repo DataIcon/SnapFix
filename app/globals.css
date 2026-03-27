@@ -25,32 +25,10 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-@keyframes breathe {
-  0% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-  }
-  50% {
-    box-shadow: 0 0 0 15px rgba(59, 130, 246, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
-  }
-}
-
-.user-location-marker {
-  width: 25px;
-  height: 25px;
-  background-color: #3b82f6;
-  border: 3px solid #1e40af;
-  border-radius: 50%;
-  cursor: pointer;
-  animation: breathe 2s infinite;
-}
-
 .user-location-marker {
   position: relative;
-  width: 25px;
-  height: 25px;
+  width: 18px;
+  height: 18px;
   border-radius: 9999px;
   background: #3b82f6;
   border: 3px solid #ffffff;
@@ -90,4 +68,61 @@ body {
     transform: scale(1.9);
     opacity: 0;
   }
+}
+
+.report-marker {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.report-marker-icon {
+  position: relative;
+  width: 34px;
+  height: 40px;
+  background: #facc15;
+  clip-path: polygon(50% 100%, 0 25%, 0 12%, 12% 0, 88% 0, 100% 12%, 100% 25%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 16px rgba(0, 0, 0, 0.35);
+}
+
+.report-marker-symbol {
+  color: #111827;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  transform: translateY(-4px);
+}
+
+.report-popup {
+  min-width: 220px;
+  color: #111827;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.report-popup-title {
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.report-popup-line {
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.report-popup-delete {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  background: #ef4444;
+  color: white;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
 }

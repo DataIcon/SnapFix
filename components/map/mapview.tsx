@@ -11,10 +11,24 @@ type ResolvedLocation = {
   street: string;
 };
 
+type ReportItem = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  city: string;
+  street: string;
+  type: string;
+  description: string;
+  imageName: string | null;
+  createdAt: string;
+};
+
 type MapViewProps = {
   recenterTrigger: number;
   onLocationResolved: (data: ResolvedLocation) => void;
   onLocationError: (message: string) => void;
+  reports?: ReportItem[];
+  onDeleteReport?: (reportId: string) => void;
 };
 
 function getLightPresetByHour(hour: number): "day" | "dusk" | "night" {
@@ -27,6 +41,8 @@ export default function MapView({
   recenterTrigger,
   onLocationResolved,
   onLocationError,
+  reports = [],
+  onDeleteReport,
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -34,6 +50,7 @@ export default function MapView({
   const userCoordsRef = useRef<{ latitude: number; longitude: number } | null>(
     null
   );
+  const reportMarkersRef = useRef<mapboxgl.Marker[]>([]);
 
   async function reverseGeocode(latitude: number, longitude: number) {
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -174,6 +191,8 @@ export default function MapView({
     });
 
     return () => {
+      reportMarkersRef.current.forEach((marker) => marker.remove());
+      reportMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
     };
@@ -187,6 +206,84 @@ export default function MapView({
       userCoordsRef.current.longitude
     );
   }, [recenterTrigger]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    reportMarkersRef.current.forEach((marker) => marker.remove());
+    reportMarkersRef.current = [];
+
+    const safeReports = Array.isArray(reports) ? reports : [];
+
+    safeReports.forEach((report) => {
+      const markerEl = document.createElement("button");
+      markerEl.className = "report-marker";
+      markerEl.type = "button";
+      markerEl.setAttribute("aria-label", `דיווח: ${report.type}`);
+      markerEl.innerHTML = `
+        <div class="report-marker-icon">
+          <span class="report-marker-symbol">!</span>
+        </div>
+      `;
+
+      const popupContainer = document.createElement("div");
+      popupContainer.dir = "rtl";
+      popupContainer.className = "report-popup";
+
+      const title = document.createElement("div");
+      title.className = "report-popup-title";
+      title.textContent = report.type;
+
+      const location = document.createElement("div");
+      location.className = "report-popup-line";
+      location.textContent = `${report.city || "ללא עיר"}, ${report.street || "ללא רחוב"}`;
+
+      const description = document.createElement("div");
+      description.className = "report-popup-line";
+      description.textContent = report.description || "ללא תיאור";
+
+      const image = document.createElement("div");
+      image.className = "report-popup-line";
+      image.textContent = report.imageName
+        ? `תמונה: ${report.imageName}`
+        : "ללא תמונה";
+
+      const createdAt = document.createElement("div");
+      createdAt.className = "report-popup-line";
+      createdAt.textContent = `נוצר: ${new Date(report.createdAt).toLocaleString("he-IL")}`;
+
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "report-popup-delete";
+      deleteButton.type = "button";
+      deleteButton.textContent = "מחק דיווח";
+
+      deleteButton.addEventListener("click", () => {
+        onDeleteReport?.(report.id);
+      });
+
+      popupContainer.appendChild(title);
+      popupContainer.appendChild(location);
+      popupContainer.appendChild(description);
+      popupContainer.appendChild(image);
+      popupContainer.appendChild(createdAt);
+      popupContainer.appendChild(deleteButton);
+
+      const popup = new mapboxgl.Popup({
+        offset: 28,
+        closeButton: true,
+      }).setDOMContent(popupContainer);
+
+      const marker = new mapboxgl.Marker({
+        element: markerEl,
+        anchor: "bottom",
+      })
+        .setLngLat([report.longitude, report.latitude])
+        .setPopup(popup)
+        .addTo(mapRef.current!);
+
+      reportMarkersRef.current.push(marker);
+    });
+  }, [reports, onDeleteReport]);
 
   return (
     <div
