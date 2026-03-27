@@ -23,22 +23,24 @@ type ReportItem = {
   createdAt: string;
 };
 
+type MapTheme = "light" | "dark";
+
 type MapViewProps = {
   recenterTrigger: number;
+  mapTheme: MapTheme;
   onLocationResolved: (data: ResolvedLocation) => void;
   onLocationError: (message: string) => void;
   reports?: ReportItem[];
   onDeleteReport?: (reportId: string) => void;
 };
 
-function getLightPresetByHour(hour: number): "day" | "dusk" | "night" {
-  if (hour >= 6 && hour < 18) return "day";
-  if (hour >= 18 && hour < 20) return "dusk";
-  return "night";
+function getBasemapPreset(theme: MapTheme): "day" | "night" {
+  return theme === "dark" ? "night" : "day";
 }
 
 export default function MapView({
   recenterTrigger,
+  mapTheme,
   onLocationResolved,
   onLocationError,
   reports = [],
@@ -97,7 +99,7 @@ export default function MapView({
       essential: true,
     });
 
-    if (!userMarkerRef.current) {
+    if (!userMarkerRef.current && mapRef.current) {
       const el = document.createElement("div");
       el.className = "user-location-marker";
 
@@ -106,9 +108,9 @@ export default function MapView({
         anchor: "center",
       })
         .setLngLat([longitude, latitude])
-        .addTo(mapRef.current!);
+        .addTo(mapRef.current);
     } else {
-      userMarkerRef.current.setLngLat([longitude, latitude]);
+      userMarkerRef.current?.setLngLat([longitude, latitude]);
     }
   }
 
@@ -126,7 +128,6 @@ export default function MapView({
         const longitude = position.coords.longitude;
 
         userCoordsRef.current = { latitude, longitude };
-
         moveToLocation(latitude, longitude);
 
         const { city, street } = await reverseGeocode(latitude, longitude);
@@ -152,7 +153,6 @@ export default function MapView({
     if (mapRef.current) return;
 
     const rtlStatus = mapboxgl.getRTLTextPluginStatus();
-
     if (rtlStatus === "unavailable") {
       mapboxgl.setRTLTextPlugin(
         "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js",
@@ -178,7 +178,7 @@ export default function MapView({
       zoom: 14,
       config: {
         basemap: {
-          lightPreset: getLightPresetByHour(new Date().getHours()),
+          lightPreset: getBasemapPreset(mapTheme),
           language: "he",
         },
       },
@@ -196,15 +196,24 @@ export default function MapView({
       map.remove();
       mapRef.current = null;
     };
+    // Map initialization should run once; theme updates are handled by the separate effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    mapRef.current.setConfigProperty(
+      "basemap",
+      "lightPreset",
+      getBasemapPreset(mapTheme)
+    );
+  }, [mapTheme]);
 
   useEffect(() => {
     if (!userCoordsRef.current) return;
 
-    moveToLocation(
-      userCoordsRef.current.latitude,
-      userCoordsRef.current.longitude
-    );
+    moveToLocation(userCoordsRef.current.latitude, userCoordsRef.current.longitude);
   }, [recenterTrigger]);
 
   useEffect(() => {
@@ -220,11 +229,7 @@ export default function MapView({
       markerEl.className = "report-marker";
       markerEl.type = "button";
       markerEl.setAttribute("aria-label", `דיווח: ${report.type}`);
-      markerEl.innerHTML = `
-        <div class="report-marker-icon">
-          <span class="report-marker-symbol">!</span>
-        </div>
-      `;
+      markerEl.innerHTML = "!";
 
       const popupContainer = document.createElement("div");
       popupContainer.dir = "rtl";
@@ -236,7 +241,9 @@ export default function MapView({
 
       const location = document.createElement("div");
       location.className = "report-popup-line";
-      location.textContent = `${report.city || "ללא עיר"}, ${report.street || "ללא רחוב"}`;
+      location.textContent = `${report.city || "ללא עיר"}, ${
+        report.street || "ללא רחוב"
+      }`;
 
       const description = document.createElement("div");
       description.className = "report-popup-line";
@@ -250,13 +257,14 @@ export default function MapView({
 
       const createdAt = document.createElement("div");
       createdAt.className = "report-popup-line";
-      createdAt.textContent = `נוצר: ${new Date(report.createdAt).toLocaleString("he-IL")}`;
+      createdAt.textContent = `נוצר: ${new Date(report.createdAt).toLocaleString(
+        "he-IL"
+      )}`;
 
       const deleteButton = document.createElement("button");
       deleteButton.className = "report-popup-delete";
       deleteButton.type = "button";
       deleteButton.textContent = "מחק דיווח";
-
       deleteButton.addEventListener("click", () => {
         onDeleteReport?.(report.id);
       });
@@ -285,11 +293,5 @@ export default function MapView({
     });
   }, [reports, onDeleteReport]);
 
-  return (
-    <div
-      ref={mapContainer}
-      className="absolute inset-0 z-0"
-      style={{ minHeight: "100vh", minWidth: "100vw" }}
-    />
-  );
+  return <div ref={mapContainer} className="h-full w-full" />;
 }
