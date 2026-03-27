@@ -31,7 +31,9 @@ export default function MapView({
   const mapContainer = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
-  const userCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const userCoordsRef = useRef<{ latitude: number; longitude: number } | null>(
+    null
+  );
 
   async function reverseGeocode(latitude: number, longitude: number) {
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -45,40 +47,30 @@ export default function MapView({
       const data = await response.json();
       const features = Array.isArray(data.features) ? data.features : [];
 
+      let city = "";
       let street = "";
 
       for (const feature of features) {
         if (!street && feature.properties?.name) {
           street = feature.properties.name;
         }
+
+        if (!city && Array.isArray(feature.properties?.context)) {
+          const place = feature.properties.context.find(
+            (item: { id?: string; name?: string }) =>
+              item.id?.includes("place") || item.id?.includes("locality")
+          );
+
+          if (place?.name) {
+            city = place.name;
+          }
+        }
       }
 
-      return { city: "", street };
+      return { city, street };
     } catch {
       return { city: "", street: "" };
     }
-  }
-
-  async function updateUserLocationOnMap() {
-    if (!mapRef.current) return;
-
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      const latitude = position.coords.latitude;
-      const longitude = position.coords.longitude;
-
-      userCoordsRef.current = { latitude, longitude };
-
-      moveToLocation(latitude, longitude);
-
-      const { city, street } = await reverseGeocode(latitude, longitude);
-
-      onLocationResolved({
-        latitude,
-        longitude,
-        city,
-        street,
-      });
-    });
   }
 
   function moveToLocation(latitude: number, longitude: number) {
@@ -103,17 +95,62 @@ export default function MapView({
     }
   }
 
-  useEffect(() => {
-    mapboxgl.setRTLTextPlugin(
-      "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js",
-      null,
-      true
+  async function updateUserLocationOnMap() {
+    if (!mapRef.current) return;
+
+    if (!navigator.geolocation) {
+      onLocationError("הדפדפן לא תומך במיקום");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+
+        userCoordsRef.current = { latitude, longitude };
+
+        moveToLocation(latitude, longitude);
+
+        const { city, street } = await reverseGeocode(latitude, longitude);
+
+        onLocationResolved({
+          latitude,
+          longitude,
+          city,
+          street,
+        });
+      },
+      () => {
+        onLocationError("לא הצלחנו לקבל את המיקום שלך");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+      }
     );
+  }
+
+  useEffect(() => {
+    if (mapRef.current) return;
+
+    const rtlStatus = mapboxgl.getRTLTextPluginStatus();
+
+    if (rtlStatus === "unavailable") {
+      mapboxgl.setRTLTextPlugin(
+        "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js",
+        null,
+        true
+      );
+    }
 
     if (!mapContainer.current) return;
 
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!token) return;
+    if (!token) {
+      onLocationError("חסר Mapbox token");
+      return;
+    }
 
     mapboxgl.accessToken = token;
 
@@ -138,13 +175,13 @@ export default function MapView({
 
     return () => {
       map.remove();
+      mapRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     if (!userCoordsRef.current) return;
 
-    // 🔥 פה הקסם — חוזר מיד בלי GPS
     moveToLocation(
       userCoordsRef.current.latitude,
       userCoordsRef.current.longitude
