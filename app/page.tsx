@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import MapView from "@/components/map/mapview";
 import {
@@ -18,7 +20,16 @@ import {
   Bell,
   Moon,
   Sun,
+  LogIn,
+  UserPlus,
 } from "lucide-react";
+import {
+  clearSession,
+  getSession,
+  setSession,
+  type SnapfixSession,
+  type UserRole,
+} from "@/lib/snapfix-session";
 
 type ResolvedLocation = {
   latitude: number;
@@ -57,6 +68,7 @@ const HAZARD_TYPES = [
 const STORAGE_KEY = "snapfix_reports";
 
 export default function HomePage() {
+  const router = useRouter();
   const [locationText, setLocationText] = useState("טוען מיקום...");
   const [currentLocation, setCurrentLocation] = useState<ResolvedLocation | null>(
     null
@@ -65,6 +77,11 @@ export default function HomePage() {
 
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isUserCardOpen, setIsUserCardOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [session, setSessionState] = useState<SnapfixSession | null>(null);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginRole, setLoginRole] = useState<UserRole>("civilian");
   const [isMyReportsOpen, setIsMyReportsOpen] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -80,6 +97,10 @@ export default function HomePage() {
   const [selectedHazardFilters, setSelectedHazardFilters] = useState<string[]>([]);
   const [showOnlyReportsWithImage, setShowOnlyReportsWithImage] = useState(false);
   const [sortMode, setSortMode] = useState<"newest" | "oldest">("newest");
+
+  useEffect(() => {
+    setSessionState(getSession());
+  }, []);
 
   useEffect(() => {
     const savedReports = localStorage.getItem(STORAGE_KEY);
@@ -106,7 +127,62 @@ export default function HomePage() {
     setIsFiltersOpen(false);
     setIsHelpOpen(false);
     setIsSettingsOpen(false);
+    setIsLoginModalOpen(false);
   }
+
+  function openLoginModal() {
+    setIsUserCardOpen(false);
+    setIsMyReportsOpen(false);
+    setIsFiltersOpen(false);
+    setIsHelpOpen(false);
+    setIsSettingsOpen(false);
+    setIsLoginModalOpen(true);
+  }
+
+  function handleLogout() {
+    clearSession();
+    setSessionState(null);
+    setIsUserCardOpen(false);
+  }
+
+  function handleLoginSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const name = loginUsername.trim();
+    if (!name) {
+      alert("נא להזין שם משתמש");
+      return;
+    }
+    if (loginPassword.length < 1) {
+      alert("נא להזין סיסמה");
+      return;
+    }
+
+    const next: SnapfixSession = {
+      displayName: name,
+      role: loginRole,
+    };
+    setSession(next);
+    setSessionState(next);
+    setIsLoginModalOpen(false);
+    setLoginPassword("");
+    setLoginUsername("");
+
+    if (loginRole === "civi-work") {
+      router.push("/civi-work");
+    }
+  }
+
+  const displayName = session?.displayName ?? "אורח";
+  const accountSubtitle = session
+    ? session.role === "civi-work"
+      ? "עובד עירייה (Civi-Work)"
+      : "אזרח רשום"
+    : "חשבון לא מחובר";
+  const statusLine = session
+    ? session.role === "civi-work"
+      ? "מחובר כעובד עירייה"
+      : "מחובר כאזרח"
+    : "ללא משתמש רשום";
 
   function togglePanel(panel: "user" | "reports" | "filters" | "help" | "settings") {
     const nextState = {
@@ -303,7 +379,10 @@ export default function HomePage() {
     "flex w-full items-center gap-2.5 rounded-[1.3rem] border border-white/10 bg-white/6 px-3 py-2 text-right transition-all duration-150 hover:border-white/20 hover:bg-white/12 active:scale-95";
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-slate-950" dir="rtl">
+    <main
+      className="relative h-[100dvh] min-h-0 w-full max-w-[100vw] overflow-hidden bg-slate-950"
+      dir="rtl"
+    >
       <MapView
         recenterTrigger={recenterTrigger}
         mapTheme={mapTheme}
@@ -313,7 +392,7 @@ export default function HomePage() {
         onDeleteReport={handleDeleteReport}
       />
 
-      <aside className="pointer-events-none absolute right-4 top-4 bottom-6 z-20 flex w-[220px] flex-col">
+      <aside className="pointer-events-none absolute right-2 top-[max(0.5rem,env(safe-area-inset-top))] bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-20 flex w-[min(220px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] flex-col sm:right-4 sm:top-4 sm:bottom-6 sm:w-[220px] sm:max-w-none">
         <div className="pointer-events-auto flex h-full min-h-0 flex-col gap-6 rounded-[1.8rem] border border-white/10 bg-slate-950/65 p-3 shadow-2xl backdrop-blur-xl">
           <button
             onClick={() => togglePanel("user")}
@@ -325,8 +404,8 @@ export default function HomePage() {
               </div>
 
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-white">אורח</div>
-                <div className="truncate text-[11px] text-white/55">חשבון לא מחובר</div>
+                <div className="truncate text-sm font-semibold text-white">{displayName}</div>
+                <div className="truncate text-[11px] text-white/55">{accountSubtitle}</div>
               </div>
             </div>
           </button>
@@ -413,17 +492,18 @@ export default function HomePage() {
 
       <button
         onClick={openReportModal}
-        className="pointer-events-auto absolute bottom-6 left-6 z-20 flex h-16 w-16 items-center justify-center rounded-full border border-yellow-200/30 bg-yellow-400 text-black shadow-2xl transition-all duration-150 hover:scale-105 hover:bg-yellow-300 active:scale-95"
+        className="pointer-events-auto absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-20 flex h-14 w-14 items-center justify-center rounded-full border border-yellow-200/30 bg-yellow-400 text-black shadow-2xl transition-all duration-150 hover:scale-105 hover:bg-yellow-300 active:scale-95 sm:bottom-6 sm:left-6 sm:h-16 sm:w-16"
         aria-label="צור דיווח"
       >
-        <Plus size={30} strokeWidth={2.5} />
+        <Plus className="h-7 w-7 sm:h-[30px] sm:w-[30px]" strokeWidth={2.5} />
       </button>
 
       {(isUserCardOpen ||
         isMyReportsOpen ||
         isFiltersOpen ||
         isHelpOpen ||
-        isSettingsOpen) && (
+        isSettingsOpen ||
+        isLoginModalOpen) && (
         <div
           className="pointer-events-none absolute inset-0 z-30 bg-black/10"
           onClick={closeAllPanels}
@@ -431,7 +511,7 @@ export default function HomePage() {
       )}
 
       {isUserCardOpen && (
-        <div className="pointer-events-auto absolute right-[250px] top-5 z-40 w-[320px] rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-5 text-white shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto absolute inset-x-3 top-16 z-40 max-h-[min(85vh,640px)] w-auto overflow-y-auto rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-4 text-white shadow-2xl backdrop-blur-xl sm:inset-x-auto sm:right-[250px] sm:top-5 sm:max-h-none sm:w-[320px] sm:overflow-visible sm:p-5">
           <div className="mb-4 flex items-start justify-between">
             <div>
               <h2 className="text-lg font-semibold">כרטיס משתמש</h2>
@@ -449,12 +529,12 @@ export default function HomePage() {
           <div className="space-y-3">
             <div className="rounded-[1.2rem] border border-white/10 bg-white/5 p-4">
               <div className="text-xs text-white/45">שם תצוגה</div>
-              <div className="mt-1 text-sm font-semibold">אורח</div>
+              <div className="mt-1 text-sm font-semibold">{displayName}</div>
             </div>
 
             <div className="rounded-[1.2rem] border border-white/10 bg-white/5 p-4">
               <div className="text-xs text-white/45">סטטוס</div>
-              <div className="mt-1 text-sm">ללא משתמש רשום</div>
+              <div className="mt-1 text-sm font-semibold">{statusLine}</div>
             </div>
 
             <div className="rounded-[1.2rem] border border-white/10 bg-white/5 p-4">
@@ -462,16 +542,147 @@ export default function HomePage() {
               <div className="mt-1 text-sm font-semibold">{reports.length}</div>
             </div>
 
-            <div className="rounded-[1.2rem] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/60">
-              בהמשך אפשר לשים כאן התחברות, הרשמה, מייל, היסטוריית פעילות, וניקוד אמינות.
+            <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={openLoginModal}
+                  className="flex items-center justify-center gap-2 rounded-[1.1rem] border border-yellow-200/35 bg-yellow-400/95 px-4 py-3 text-sm font-semibold text-black transition hover:bg-yellow-300 active:scale-[0.99]"
+                >
+                  <LogIn size={18} />
+                  התחברות
+                </button>
+                <Link
+                  href="/sign-up"
+                  onClick={() => setIsUserCardOpen(false)}
+                  className="flex items-center justify-center gap-2 rounded-[1.1rem] border border-white/15 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15 active:scale-[0.99]"
+                >
+                  <UserPlus size={18} />
+                  הרשמה
+                </Link>
+              </div>
+              {session && (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full rounded-[1rem] border border-white/10 py-2.5 text-sm text-white/70 transition hover:bg-white/10"
+                >
+                  התנתקות
+                </button>
+              )}
+              {session?.role === "civi-work" && (
+                <Link
+                  href="/civi-work"
+                  onClick={() => setIsUserCardOpen(false)}
+                  className="flex w-full items-center justify-center rounded-[1rem] border border-white/10 py-2.5 text-sm text-yellow-200/90 transition hover:bg-white/10"
+                >
+                  מעבר ללוח בקרת עובדים
+                </Link>
+              )}
             </div>
           </div>
         </div>
       )}
 
+      {isLoginModalOpen && (
+        <div
+          className="absolute inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-black/60 px-3 py-[max(0.75rem,env(safe-area-inset-bottom))] pt-12 sm:items-center sm:px-4 sm:py-6"
+          onClick={() => setIsLoginModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="login-title"
+            className="pointer-events-auto mb-0 w-full max-w-md rounded-t-[1.8rem] border border-white/10 bg-slate-950/95 p-5 text-white shadow-2xl backdrop-blur-2xl sm:mb-0 sm:rounded-[1.8rem] sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 id="login-title" className="text-lg font-semibold">
+                  התחברות
+                </h2>
+                <p className="mt-1 text-sm text-white/55">הזינו פרטים ובחרו סוג משתמש</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLoginModalOpen(false)}
+                className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 transition hover:bg-white/10"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs text-white/45">שם משתמש</label>
+                <input
+                  type="text"
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  autoComplete="username"
+                  className="w-full rounded-[1.1rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none transition focus:border-yellow-300/50"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs text-white/45">סיסמה</label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  autoComplete="current-password"
+                  className="w-full rounded-[1.1rem] border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none transition focus:border-yellow-300/50"
+                />
+              </div>
+
+              <div>
+                <div className="mb-2 text-xs text-white/45">סוג משתמש</div>
+                <div className="flex flex-col gap-2">
+                  <label className="flex cursor-pointer items-center gap-3 rounded-[1.1rem] border border-white/10 bg-white/5 px-4 py-3 transition has-[:checked]:border-yellow-300/50 has-[:checked]:bg-yellow-400/10">
+                    <input
+                      type="radio"
+                      name="login-role"
+                      checked={loginRole === "civilian"}
+                      onChange={() => setLoginRole("civilian")}
+                      className="h-4 w-4 accent-yellow-400"
+                    />
+                    <span className="text-sm">אזרח (Civilian) — נשארים במפה</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-[1.1rem] border border-white/10 bg-white/5 px-4 py-3 transition has-[:checked]:border-yellow-300/50 has-[:checked]:bg-yellow-400/10">
+                    <input
+                      type="radio"
+                      name="login-role"
+                      checked={loginRole === "civi-work"}
+                      onChange={() => setLoginRole("civi-work")}
+                      className="h-4 w-4 accent-yellow-400"
+                    />
+                    <span className="text-sm">עובד עירייה (Civi-Work) — לוח ניהול</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsLoginModalOpen(false)}
+                  className="rounded-[1.1rem] border border-white/10 px-4 py-2.5 text-sm text-white/85 transition hover:bg-white/10"
+                >
+                  ביטול
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-[1.1rem] border border-yellow-200/40 bg-yellow-400 px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-yellow-300"
+                >
+                  התחבר
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {isMyReportsOpen && (
-        <div className="pointer-events-auto absolute right-[250px] top-24 z-40 w-[420px] max-h-[70vh] overflow-hidden rounded-[1.8rem] border border-white/10 bg-slate-950/90 text-white shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <div className="pointer-events-auto absolute inset-x-3 top-16 z-40 flex max-h-[min(85vh,640px)] w-auto flex-col overflow-hidden rounded-[1.8rem] border border-white/10 bg-slate-950/90 text-white shadow-2xl backdrop-blur-xl sm:inset-x-auto sm:right-[250px] sm:top-24 sm:max-h-[70vh] sm:w-[420px]">
+          <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4">
             <div>
               <h2 className="text-lg font-semibold">הדיווחים שלי</h2>
               <p className="mt-1 text-sm text-white/60">רשימת הדיווחים שנשמרו כרגע בדפדפן</p>
@@ -485,7 +696,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div className="max-h-[calc(70vh-82px)] overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:max-h-[calc(70vh-82px)] sm:p-4">
             {reports.length === 0 ? (
               <div className="rounded-[1.3rem] border border-dashed border-white/10 bg-white/[0.03] p-5 text-sm text-white/60">
                 עדיין לא יצרת דיווחים.
@@ -545,7 +756,7 @@ export default function HomePage() {
       )}
 
       {isFiltersOpen && (
-        <div className="pointer-events-auto absolute right-[250px] top-44 z-40 w-[360px] rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-5 text-white shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto absolute inset-x-3 top-16 z-40 max-h-[min(85vh,640px)] w-auto overflow-y-auto rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-4 text-white shadow-2xl backdrop-blur-xl sm:inset-x-auto sm:right-[250px] sm:top-44 sm:max-h-none sm:w-[360px] sm:overflow-visible sm:p-5">
           <div className="mb-4 flex items-start justify-between">
             <div>
               <h2 className="text-lg font-semibold">סינון דיווחים</h2>
@@ -634,7 +845,7 @@ export default function HomePage() {
       )}
 
       {isHelpOpen && (
-        <div className="pointer-events-auto absolute right-[250px] top-[330px] z-40 w-[360px] rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-5 text-white shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto absolute inset-x-3 top-16 z-40 max-h-[min(85vh,640px)] w-auto overflow-y-auto rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-4 text-white shadow-2xl backdrop-blur-xl sm:inset-x-auto sm:right-[250px] sm:top-[330px] sm:max-h-none sm:w-[360px] sm:overflow-visible sm:p-5">
           <div className="mb-4 flex items-start justify-between">
             <div>
               <h2 className="text-lg font-semibold">עזרה</h2>
@@ -667,7 +878,7 @@ export default function HomePage() {
       )}
 
       {isSettingsOpen && (
-        <div className="pointer-events-auto absolute right-[250px] bottom-5 z-40 w-[360px] rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-5 text-white shadow-2xl backdrop-blur-xl">
+        <div className="pointer-events-auto absolute inset-x-3 top-16 bottom-[max(5.5rem,env(safe-area-inset-bottom))] z-40 max-h-[min(75vh,520px)] w-auto overflow-y-auto rounded-[1.8rem] border border-white/10 bg-slate-950/90 p-4 text-white shadow-2xl backdrop-blur-xl sm:inset-x-auto sm:bottom-5 sm:left-auto sm:right-[250px] sm:top-auto sm:max-h-none sm:w-[360px] sm:overflow-visible sm:p-5">
           <div className="mb-4 flex items-start justify-between">
             <div>
               <h2 className="text-lg font-semibold">הגדרות</h2>
@@ -723,8 +934,8 @@ export default function HomePage() {
       )}
 
       {isReportModalOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 px-4">
-          <div className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-slate-950/95 p-6 text-white shadow-2xl backdrop-blur-2xl">
+        <div className="absolute inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/55 px-3 py-[max(0.75rem,env(safe-area-inset-bottom))] pt-8 sm:items-center sm:px-4 sm:py-4">
+          <div className="mb-0 w-full max-h-[min(92dvh,900px)] max-w-2xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-slate-950/95 p-4 text-white shadow-2xl backdrop-blur-2xl sm:mb-0 sm:rounded-[2rem] sm:p-6">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-semibold">דיווח חדש</h2>
