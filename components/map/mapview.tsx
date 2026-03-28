@@ -20,8 +20,47 @@ type ReportItem = {
   type: string;
   description: string;
   imageName: string | null;
+  imageDataUrl?: string | null;
   createdAt: string;
 };
+
+function openReportImageLightbox(src: string) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "report-image-lightbox-backdrop";
+  backdrop.dir = "rtl";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "report-image-lightbox-close";
+  closeBtn.setAttribute("aria-label", "סגור");
+  closeBtn.innerHTML = "<span aria-hidden=\"true\">&#215;</span>";
+
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "תמונת דיווח";
+  img.className = "report-image-lightbox-img";
+
+  function close() {
+    backdrop.remove();
+    document.removeEventListener("keydown", onKey);
+  }
+
+  function onKey(e: KeyboardEvent) {
+    if (e.key === "Escape") close();
+  }
+
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) close();
+  });
+  closeBtn.addEventListener("click", close);
+  img.addEventListener("click", (e) => e.stopPropagation());
+
+  document.addEventListener("keydown", onKey);
+
+  backdrop.appendChild(closeBtn);
+  backdrop.appendChild(img);
+  document.body.appendChild(backdrop);
+}
 
 type MapTheme = "light" | "dark";
 
@@ -33,6 +72,14 @@ type MapViewProps = {
   reports?: ReportItem[];
   onDeleteReport?: (reportId: string) => void;
 };
+
+/** Map click target can be a Text node (e.g. "!" inside the marker button), not HTMLElement. */
+function eventTargetToElement(target: EventTarget | null): HTMLElement | null {
+  if (!target) return null;
+  if (target instanceof HTMLElement) return target;
+  if (target instanceof Text && target.parentElement) return target.parentElement;
+  return null;
+}
 
 function getBasemapPreset(theme: MapTheme): "day" | "night" {
   return theme === "dark" ? "night" : "day";
@@ -219,10 +266,36 @@ export default function MapView({
   useEffect(() => {
     if (!mapRef.current) return;
 
+    const map = mapRef.current;
+
     reportMarkersRef.current.forEach((marker) => marker.remove());
     reportMarkersRef.current = [];
 
     const safeReports = Array.isArray(reports) ? reports : [];
+    type MarkerBinding = {
+      markerEl: HTMLButtonElement;
+      popup: mapboxgl.Popup;
+      marker: mapboxgl.Marker;
+    };
+    const markerBindings: MarkerBinding[] = [];
+
+    function makeBox(label: string, valueText: string, valueClass?: string) {
+      const box = document.createElement("div");
+      box.className = "report-popup-box";
+
+      const labelEl = document.createElement("div");
+      labelEl.className = "report-popup-box-label";
+      labelEl.textContent = label;
+
+      const valueEl = document.createElement("div");
+      valueEl.className = "report-popup-box-value";
+      if (valueClass) valueEl.classList.add(valueClass);
+      valueEl.textContent = valueText;
+
+      box.appendChild(labelEl);
+      box.appendChild(valueEl);
+      return box;
+    }
 
     safeReports.forEach((report) => {
       const markerEl = document.createElement("button");
@@ -235,50 +308,91 @@ export default function MapView({
       popupContainer.dir = "rtl";
       popupContainer.className = "report-popup";
 
-      const title = document.createElement("div");
-      title.className = "report-popup-title";
-      title.textContent = report.type;
+      const titleBox = document.createElement("div");
+      titleBox.className = "report-popup-box report-popup-box--lead";
+      titleBox.textContent = report.type;
 
-      const location = document.createElement("div");
-      location.className = "report-popup-line";
-      location.textContent = `${report.city || "ללא עיר"}, ${
-        report.street || "ללא רחוב"
-      }`;
+      popupContainer.appendChild(titleBox);
 
-      const description = document.createElement("div");
-      description.className = "report-popup-line";
-      description.textContent = report.description || "ללא תיאור";
+      popupContainer.appendChild(
+        makeBox(
+          "מיקום",
+          `${report.city || "ללא עיר"}, ${report.street || "ללא רחוב"}`
+        )
+      );
 
-      const image = document.createElement("div");
-      image.className = "report-popup-line";
-      image.textContent = report.imageName
-        ? `תמונה: ${report.imageName}`
-        : "ללא תמונה";
+      popupContainer.appendChild(
+        makeBox("תיאור", report.description?.trim() || "ללא תיאור")
+      );
 
-      const createdAt = document.createElement("div");
-      createdAt.className = "report-popup-line";
-      createdAt.textContent = `נוצר: ${new Date(report.createdAt).toLocaleString(
-        "he-IL"
-      )}`;
+      const imageBox = document.createElement("div");
+      imageBox.className = "report-popup-box";
+
+      const imageLabel = document.createElement("div");
+      imageLabel.className = "report-popup-box-label";
+      imageLabel.textContent = "תמונה";
+
+      const imageValue = document.createElement("div");
+      imageValue.className =
+        "report-popup-box-value report-popup-box-value--media";
+
+      const imageSlot = document.createElement("div");
+      imageSlot.className = "report-popup-thumb-slot";
+
+      if (report.imageDataUrl) {
+        const thumbBtn = document.createElement("button");
+        thumbBtn.type = "button";
+        thumbBtn.className = "report-popup-thumb-btn";
+        thumbBtn.setAttribute(
+          "aria-label",
+          "הצג תמונה בגודל מלא"
+        );
+
+        const thumbImg = document.createElement("img");
+        thumbImg.src = report.imageDataUrl;
+        thumbImg.alt = report.imageName || "תמונת דיווח";
+        thumbImg.className = "report-popup-thumb-img";
+        thumbImg.draggable = false;
+
+        thumbBtn.appendChild(thumbImg);
+        thumbBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openReportImageLightbox(report.imageDataUrl!);
+        });
+
+        imageSlot.appendChild(thumbBtn);
+      }
+
+      imageValue.appendChild(imageSlot);
+
+      imageBox.appendChild(imageLabel);
+      imageBox.appendChild(imageValue);
+      popupContainer.appendChild(imageBox);
+
+      popupContainer.appendChild(
+        makeBox(
+          "נוצר",
+          new Date(report.createdAt).toLocaleString("he-IL"),
+          "report-popup-box-value--meta"
+        )
+      );
 
       const deleteButton = document.createElement("button");
       deleteButton.className = "report-popup-delete";
       deleteButton.type = "button";
       deleteButton.textContent = "מחק דיווח";
-      deleteButton.addEventListener("click", () => {
+      deleteButton.addEventListener("click", (e) => {
+        e.stopPropagation();
         onDeleteReport?.(report.id);
       });
 
-      popupContainer.appendChild(title);
-      popupContainer.appendChild(location);
-      popupContainer.appendChild(description);
-      popupContainer.appendChild(image);
-      popupContainer.appendChild(createdAt);
       popupContainer.appendChild(deleteButton);
 
       const popup = new mapboxgl.Popup({
         offset: 28,
-        closeButton: true,
+        closeButton: false,
+        closeOnClick: false,
+        maxWidth: "280px",
       }).setDOMContent(popupContainer);
 
       const marker = new mapboxgl.Marker({
@@ -286,11 +400,55 @@ export default function MapView({
         anchor: "bottom",
       })
         .setLngLat([report.longitude, report.latitude])
-        .setPopup(popup)
-        .addTo(mapRef.current!);
+        .addTo(map);
+
+      markerBindings.push({ markerEl, popup, marker });
+
+      popup.on("open", () => {
+        popup
+          .getElement()
+          ?.querySelector(".mapboxgl-popup-close-button")
+          ?.remove();
+      });
 
       reportMarkersRef.current.push(marker);
     });
+
+    function handleReportMapClick(e: mapboxgl.MapMouseEvent) {
+      const path = e.originalEvent.composedPath();
+      for (const node of path) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (!node.classList.contains("report-marker")) continue;
+
+        const binding = markerBindings.find((b) => b.markerEl === node);
+        if (!binding) continue;
+
+        const { popup, marker } = binding;
+        if (popup.isOpen()) {
+          popup.remove();
+        } else {
+          markerBindings.forEach(({ popup: p }) => {
+            if (p !== popup && p.isOpen()) p.remove();
+          });
+          popup.setLngLat(marker.getLngLat()!).addTo(map);
+        }
+        return;
+      }
+
+      const el = eventTargetToElement(e.originalEvent.target);
+      if (!el) return;
+      if (el.closest(".mapboxgl-popup")) return;
+
+      markerBindings.forEach(({ popup: p }) => {
+        if (p.isOpen()) p.remove();
+      });
+    }
+
+    map.on("click", handleReportMapClick);
+
+    return () => {
+      map.off("click", handleReportMapClick);
+    };
   }, [reports, onDeleteReport]);
 
   return <div ref={mapContainer} className="h-full w-full" />;

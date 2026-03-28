@@ -36,6 +36,8 @@ type ReportItem = {
   type: string;
   description: string;
   imageName: string | null;
+  /** Base64 data URL for thumbnail / lightbox (set on submit when a file is attached). */
+  imageDataUrl?: string | null;
   createdAt: string;
 };
 
@@ -184,7 +186,16 @@ export default function HomePage() {
     setReportImage(file);
   }
 
-  function handleApproveReport() {
+  function readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleApproveReport() {
     if (!currentLocation) {
       alert("עדיין אין מיקום נוכחי");
       return;
@@ -200,6 +211,15 @@ export default function HomePage() {
       return;
     }
 
+    let imageDataUrl: string | null = null;
+    if (reportImage) {
+      try {
+        imageDataUrl = await readFileAsDataUrl(reportImage);
+      } catch {
+        imageDataUrl = null;
+      }
+    }
+
     const newReport: ReportItem = {
       id: crypto.randomUUID(),
       latitude: currentLocation.latitude,
@@ -209,6 +229,7 @@ export default function HomePage() {
       type: reportType,
       description: reportDescription.trim(),
       imageName: reportImage?.name ?? null,
+      imageDataUrl,
       createdAt: new Date().toISOString(),
     };
 
@@ -262,7 +283,9 @@ export default function HomePage() {
     }
 
     if (showOnlyReportsWithImage) {
-      nextReports = nextReports.filter((report) => Boolean(report.imageName));
+      nextReports = nextReports.filter((report) =>
+        Boolean(report.imageDataUrl ?? report.imageName)
+      );
     }
 
     nextReports.sort((a, b) => {
@@ -290,11 +313,11 @@ export default function HomePage() {
         onDeleteReport={handleDeleteReport}
       />
 
-      <aside className="pointer-events-none absolute right-4 top-4 z-20 flex w-[220px] flex-col">
-        <div className="pointer-events-auto rounded-[1.8rem] border border-white/10 bg-slate-950/65 p-3 shadow-2xl backdrop-blur-xl">
+      <aside className="pointer-events-none absolute right-4 top-4 bottom-6 z-20 flex w-[220px] flex-col">
+        <div className="pointer-events-auto flex h-full min-h-0 flex-col gap-6 rounded-[1.8rem] border border-white/10 bg-slate-950/65 p-3 shadow-2xl backdrop-blur-xl">
           <button
             onClick={() => togglePanel("user")}
-            className="flex w-full items-center justify-between rounded-[1.35rem] border border-white/10 bg-white/8 px-4 py-3 text-right transition-all duration-150 hover:border-white/20 hover:bg-white/12 active:scale-95"
+            className="flex w-full shrink-0 items-center justify-start rounded-[1.35rem] border border-white/10 bg-white/8 px-4 py-3 text-right transition-all duration-150 hover:border-white/20 hover:bg-white/12 active:scale-95"
           >
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10">
@@ -303,14 +326,12 @@ export default function HomePage() {
 
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-white">אורח</div>
-                <div className="truncate text-[11px] text-white/55">ללא חשבון מחובר</div>
+                <div className="truncate text-[11px] text-white/55">חשבון לא מחובר</div>
               </div>
             </div>
-
-            <span className="text-xs text-white/40">{isUserCardOpen ? "−" : "+"}</span>
           </button>
 
-          <div className="mt-6 space-y-2">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-2">
             <button onClick={openReportModal} className={panelButtonBaseClass}>
               <Plus size={17} className="text-yellow-300" />
               <span className="text-sm text-white">צור דיווח</span>
@@ -372,7 +393,7 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div className="mt-6 rounded-[1.35rem] border border-white/10 bg-black/20 p-3">
+          <div className="shrink-0 rounded-[1.35rem] border border-white/10 bg-black/20 p-3">
             <div className="text-[11px] font-medium text-white/45">Developer tools</div>
 
             <div className="mt-2 text-xs text-white/75">
@@ -389,15 +410,6 @@ export default function HomePage() {
           </div>
         </div>
       </aside>
-
-      <section className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(480px,calc(100vw-270px))] -translate-x-1/2 px-4">
-        <div className="rounded-[1.8rem] border border-white/10 bg-slate-950/65 px-5 py-4 text-center shadow-2xl backdrop-blur-xl">
-          <div className="mb-1 text-[11px] font-medium tracking-[0.18em] text-white/45">
-            מיקום נוכחי
-          </div>
-          <div className="text-sm font-semibold text-white">{locationText}</div>
-        </div>
-      </section>
 
       <button
         onClick={openReportModal}
